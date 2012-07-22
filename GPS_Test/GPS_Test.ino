@@ -27,6 +27,7 @@ Adafruit_GPS GPS(&mySerial);
 
 Adafruit_PCD8544 display = Adafruit_PCD8544(PIN_SCLK, PIN_SDIN, PIN_DC, PIN_SCE, PIN_RESET);
 
+static char dtostrfbuffer[9];
 
 // Set GPSECHO to 'false' to turn off echoing the GPS data to the Serial console
 // Set to 'true' if you want to debug and listen to the raw GPS sentences
@@ -37,13 +38,53 @@ Adafruit_PCD8544 display = Adafruit_PCD8544(PIN_SCLK, PIN_SDIN, PIN_DC, PIN_SCE,
 boolean usingInterrupt = false;
 void useInterrupt(boolean); // Func prototype keeps Arduino 0023 happy
 
+/**
+ * Derived from http://www.utopiamechanicus.com/article/sprintf-arduino/
+ */
+void _dpx(char *format, boolean line, va_list args)
+{
+  char buff[128];
+  vsnprintf(buff,sizeof(buff),format,args);
+  buff[sizeof(buff)/sizeof(buff[0])-1]='\0';
+  if (!line) { 
+    display.print(buff);
+  } else {
+    display.println(buff);
+  }
+}
+
+void displayPrint(char *format,...)
+{
+  va_list args;
+  va_start (args,format);
+  _dpx(format, false, args);
+  va_end(args);
+}
+
+void displayPrintln(char *format,...)
+{
+  va_list args;
+  va_start (args,format);
+  _dpx(format, true, args);
+  va_end (args);
+}
+
+void displayPrintln(const __FlashStringHelper *ifsh, ...) {
+  va_list args;
+   char PROGMEM *format = ( char PROGMEM *)ifsh;
+  va_start (args,format);
+  _dpx(format, true, args);
+  va_end (args);
+}
+
+
 void setup()  
 {
     
   // connect at 115200 so we can read the GPS fast enough and echo without dropping chars
   // also spit it out
   Serial.begin(115200);
-  Serial.println("GPS/LCD basic test!");
+  Serial.println(F("GPS/LCD basic test!"));
 
   // 9600 NMEA is the default baud rate for Adafruit MTK GPS's- some use 4800
   GPS.begin(9600);
@@ -67,7 +108,7 @@ void setup()
 
   pinMode(PIN_GPS_FIX, OUTPUT);
   
-    display.begin();
+  display.begin();
   // init done
   
   // you can change the contrast around to adapt the display
@@ -82,7 +123,7 @@ void setup()
   display.setTextSize(1);
   display.setTextColor(BLACK);
   display.setCursor(0,0);
-  display.println("GPS Monitor");
+  displayPrintln("GPS Monitor");
   display.display();
 
 }
@@ -145,44 +186,61 @@ void loop()                     // run over and over again
   if (millis() - timer > 2000) { 
     timer = millis(); // reset the timer
     
-    Serial.print("\nTime: ");
-    Serial.print(GPS.hour, DEC); Serial.print(':');
-    Serial.print(GPS.minute, DEC); Serial.print(':');
-    Serial.print(GPS.seconds, DEC); Serial.print('.');
+    Serial.print(F("\nTime: "));
+    Serial.print(GPS.hour, DEC); Serial.print(F(":"));
+    Serial.print(GPS.minute, DEC); Serial.print(F(":"));
+    Serial.print(GPS.seconds, DEC); Serial.print(F("."));
     Serial.println(GPS.milliseconds);
-    Serial.print("Date: ");
-    Serial.print(GPS.day, DEC); Serial.print('/');
-    Serial.print(GPS.month, DEC); Serial.print("/20");
+    Serial.print(F("Date: "));
+    Serial.print(GPS.day, DEC); Serial.print(F("/"));
+    Serial.print(GPS.month, DEC); Serial.print(F("/20"));
     Serial.println(GPS.year, DEC);
-    Serial.print("Fix: "); Serial.print((int)GPS.fix);
-    Serial.print(" quality: "); Serial.println((int)GPS.fixquality); 
-    Serial.print("Satellites: "); Serial.println((int)GPS.satellites);
+    Serial.print(F("Fix: ")); Serial.print((int)GPS.fix);
+    Serial.print(F(" quality: ")); Serial.println((int)GPS.fixquality); 
+    Serial.print(F("Satellites: ")); Serial.println((int)GPS.satellites);
 
     display.clearDisplay();
     display.setCursor(0,0);
-    display.println("GPS Monitor");
-    display.print("Fix: ");
-    display.print(GPS.fix ? "Y" : "N");
-    display.print(" Sat: "); display.println((int)GPS.satellites);
+    if (GPS.day == 0) {
+      displayPrintln("GPS Monitor");
+    } else {
+      displayPrint("%s%d/%s%d/%s%d %s%d:%s%d", GPS.day < 10 ? "0" : "", GPS.day, GPS.month < 10 ? "0" : "", GPS.month, GPS.year < 10 ? "0" : "", GPS.year, GPS.hour < 10 ? "0" : "", GPS.hour, GPS.minute < 10 ? "0" : "", GPS.minute);
+    }
+    displayPrintln("Fix: %s Sat: %d", GPS.fix ? "Y" : "N", GPS.satellites); 
     
     if (GPS.fix) {
-      Serial.print("Location: ");
+      Serial.print(F("Location: "));
       Serial.print(GPS.latitude, 4); Serial.print(GPS.lat);
-      Serial.print(", "); 
+      Serial.print(F(", ")); 
       Serial.print(GPS.longitude, 4); Serial.println(GPS.lon);
       
-      Serial.print("Speed (knots): "); Serial.println(GPS.speed);
-      Serial.print("Angle: "); Serial.println(GPS.angle);
-      Serial.print("Altitude: "); Serial.println(GPS.altitude);
+      Serial.print(F("Speed (mph): ")); Serial.println((int)(GPS.speed * 1.15078));
+      Serial.print(F("Angle: ")); Serial.println(cardinal(GPS.angle));
+      Serial.print(F("Altitude: ")); Serial.println(GPS.altitude);
 
-      display.print(GPS.latitude, 4); display.println(GPS.lat);
-      display.print(GPS.longitude, 4); display.println(GPS.lon);
-      display.print("Speed : "); display.println(GPS.speed);
-      //display.print("Angle: "); display.println(GPS.angle);
-      display.print("Alt: "); display.println(GPS.altitude);
+      dtostrf(GPS.latitude, 9, 4, dtostrfbuffer);
+      displayPrintln("%s%c", dtostrfbuffer, GPS.lat);
+      dtostrf(GPS.longitude, 9, 4, dtostrfbuffer);
+      displayPrintln("%s%c", dtostrfbuffer, GPS.lon);
+      displayPrintln("%d mph -> %s", (int)(GPS.speed * 1.15078), cardinal(GPS.angle));
+      dtostrf(GPS.altitude, 5, 0, dtostrfbuffer);
+      displayPrintln("Alt: %s m", dtostrfbuffer);
     }
     display.display();
 
   }
   digitalWrite(PIN_GPS_FIX, GPS.fix ? HIGH : LOW); 
 }
+
+/**
+ * TinyGPS implementation
+ */
+const char *cardinal (float course)
+{
+  static const char* directions[] = {"N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"};
+
+  int direction = (int)((course + 11.25f) / 22.5f);
+  return directions[direction % 16];
+}
+
+
