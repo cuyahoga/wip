@@ -69,15 +69,6 @@ void displayPrintln(char *format,...)
   va_end (args);
 }
 
-void displayPrintln(const __FlashStringHelper *ifsh, ...) {
-  va_list args;
-   char PROGMEM *format = ( char PROGMEM *)ifsh;
-  va_start (args,format);
-  _dpx(format, true, args);
-  va_end (args);
-}
-
-
 void setup()  
 {
     
